@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTelegram } from '../hooks/useTelegram';
 import { Link } from 'react-router-dom';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+import API_URL from '../utils/api.js';
 
 export default function Profile() {
     const { user } = useTelegram();

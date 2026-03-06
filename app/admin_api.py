@@ -32,6 +32,7 @@ class ProductCreate(BaseModel):
     price: float
     old_price: Optional[float] = None
     image_url: str = ""
+    image_urls: list[str] = []
     category: str = "general"
     subcategory: str = ""
     quantity: int = 0
@@ -46,6 +47,7 @@ class ProductUpdate(BaseModel):
     price: Optional[float] = None
     old_price: Optional[float] = None
     image_url: Optional[str] = None
+    image_urls: Optional[list[str]] = None
     category: Optional[str] = None
     subcategory: Optional[str] = None
     quantity: Optional[int] = None
@@ -80,7 +82,10 @@ async def admin_create_category(
 ):
     cat = Category(
         name=data.name,
+        slug=data.slug,
         image_url=data.image_url,
+        emoji=data.emoji,
+        color=data.color,
         parent_id=data.parent_id,
         order=data.order
     )
@@ -104,7 +109,10 @@ async def admin_update_category(
         raise HTTPException(status_code=404, detail="Category not found")
         
     cat.name = data.name
+    cat.slug = data.slug
     cat.image_url = data.image_url
+    cat.emoji = data.emoji
+    cat.color = data.color
     cat.parent_id = data.parent_id
     cat.order = data.order
     await session.commit()
@@ -176,16 +184,14 @@ async def create_product(
     session: AsyncSession = Depends(get_session),
 ):
     product_dict = data.model_dump()
-    if "quantity" in product_dict and product_dict["quantity"] > 0:
-        product_dict["in_stock"] = True
-    elif "quantity" in product_dict and product_dict["quantity"] == 0:
-        product_dict["in_stock"] = False
 
     product = Product(**product_dict)
     session.add(product)
     await session.commit()
-    await session.refresh(product)
-    return product
+    
+    stmt = select(Product).options(selectinload(Product.variations)).where(Product.id == product.id)
+    result = await session.execute(stmt)
+    return result.scalar_one()
 
 
 @router.put("/products/{product_id}", response_model=ProductOut, dependencies=[Depends(verify_admin)])
@@ -194,7 +200,9 @@ async def update_product(
     data: ProductUpdate,
     session: AsyncSession = Depends(get_session),
 ):
-    product = await session.get(Product, product_id)
+    stmt = select(Product).options(selectinload(Product.variations)).where(Product.id == product_id)
+    result = await session.execute(stmt)
+    product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
@@ -202,12 +210,7 @@ async def update_product(
     for key, value in update_data.items():
         setattr(product, key, value)
 
-    # Auto-adjust stock based on quantity if it was updated
-    if "quantity" in update_data:
-        product.in_stock = product.quantity > 0
-
     await session.commit()
-    await session.refresh(product)
     return product
 
 
@@ -288,13 +291,13 @@ async def upload_image(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(await file.read())
 
-    return {"url": f"{settings.webapp_url.rstrip('/')}/uploads/{filename}" if settings.webapp_url else f"/uploads/{filename}"}
+    # Return relative path so it works across both localhost and ngrok domains
+    return {"url": f"/uploads/{filename}"}
 
 
 # ── ORDERS ───────────────────────────────────────────────
 @router.get("/orders", response_model=list[OrderOut], dependencies=[Depends(verify_admin)])
 async def list_orders(session: AsyncSession = Depends(get_session)):
-    from sqlalchemy.orm import selectinload
     result = await session.execute(
         select(Order)
         .options(selectinload(Order.items))
@@ -305,7 +308,6 @@ async def list_orders(session: AsyncSession = Depends(get_session)):
 
 @router.get("/orders/{order_id}", response_model=OrderOut, dependencies=[Depends(verify_admin)])
 async def get_order_detail(order_id: int, session: AsyncSession = Depends(get_session)):
-    from sqlalchemy.orm import selectinload
     result = await session.execute(
         select(Order)
         .options(selectinload(Order.items))
@@ -323,7 +325,6 @@ async def update_order(
     data: OrderUpdate,
     session: AsyncSession = Depends(get_session),
 ):
-    from sqlalchemy.orm import selectinload
     result = await session.execute(select(Order).options(selectinload(Order.items)).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     

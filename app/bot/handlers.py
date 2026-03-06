@@ -20,7 +20,7 @@ router = Router()
 async def cmd_start(message: Message):
     is_https = settings.webapp_url.startswith("https://")
     text = (
-        "👋 Добро пожаловать в <b>TG Shop</b>!\n\n"
+        "👋 Добро пожаловать в <b>Private Drop</b>!\n\n"
     )
     if is_https:
         text += "Нажми кнопку ниже, чтобы открыть магазин 🛍"
@@ -51,7 +51,7 @@ async def open_shop_fallback(message: Message):
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     await message.answer(
-        "🤖 <b>TG Shop — Telegram-магазин</b>\n\n"
+        "🤖 <b>Private Drop — Telegram-магазин</b>\n\n"
         "• Нажми «🛍 Открыть магазин», чтобы просмотреть каталог\n"
         "• Добавь товары в корзину и оформи заказ\n"
         "• Нажми «📦 Мои заказы», чтобы посмотреть историю\n\n"

@@ -1,9 +1,15 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.bot import bot
+from app.config import settings
 from app.database import get_session
 from app.schemas import ProductOut, OrderCreate, OrderOut, UserProfileOut, UserProfileUpdate, CategoryOut
 from app import crud
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["shop"])
 
@@ -19,9 +25,10 @@ async def list_products(
     subcategory: str | None = None,
     is_new: bool | None = None,
     on_sale: bool | None = None,
+    in_stock: bool | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    products = await crud.get_products(session, category, subcategory, is_new, on_sale)
+    products = await crud.get_products(session, category, subcategory, is_new, on_sale, in_stock)
     return products
 
 
@@ -60,32 +67,29 @@ async def create_order(
     
     # Send notification to admin group
     try:
-        from app.bot.bot import bot
-        from app.config import settings
-        
-        items_list = "\n".join([f"- Product {item.product_id} x {item.quantity}" for item in data.items])
-        
+        items_text = ""
+        for item in order.items:
+            var_text = f" ({item.variation_name})" if item.variation_name else ""
+            items_text += f"• {item.quantity}x {item.product_name}{var_text} - ${item.price * item.quantity:.2f}\n"
+
         msg = (
-            f"🛒 <b>Новый заказ #{order.id}</b>\n"
-            f"👤 Заказчик: {data.customer_name} (@{data.customer_username})\n"
-            f"📞 Телефон: {data.phone}\n"
-            f"📍 Адрес: {data.shipping_address}, {data.shipping_city}, {data.shipping_state} {data.shipping_zip}\n\n"
-            f"💳 Ожидает оплату Zelle\n"
-            f"🔑 Confirmation: <code>{data.payment_confirmation}</code>\n\n"
-            f"📦 Товары:\n{items_list}"
+            f"🛒 <b>New Order #{order.id}</b>\n\n"
+            f"👤 <b>Customer:</b> {order.customer_name} (@{order.customer_username})\n"
+            f"📞 <b>Phone:</b> {order.phone}\n"
+            f"📍 <b>Address:</b> {order.shipping_address}, {order.shipping_city}, {order.shipping_state} {order.shipping_zip}\n\n"
+            f"📦 <b>Items:</b>\n{items_text}\n"
+            f"💰 <b>Total:</b> ${order.total:.2f}\n\n"
+            f"💳 <b>Payment:</b> {order.payment_method.capitalize()} (Pending)\n"
+            f"🔑 <b>Confirmation:</b> <code>{order.payment_confirmation}</code>"
         )
-        
+
         await bot.send_message(
             chat_id=settings.admin_group_id,
             text=msg,
             parse_mode="HTML"
         )
-    except Exception as e:
-        import logging
-        import traceback
-        logging.getLogger(__name__).error(f"Failed to send admin notification: {e}")
-        with open("C:/Users/IG/Desktop/Development/TG-shop/error.log", "a", encoding="utf-8") as f:
-            f.write(f"Failed to send admin notification: {e}\n{traceback.format_exc()}\n")
+    except Exception:
+        logger.exception("Failed to send admin notification for order #%s", order.id)
 
     return order
 

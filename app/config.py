@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     payment_provider_token: str = Field("", alias="PAYMENT_PROVIDER_TOKEN")
     admin_secret: str = Field("changeme", alias="ADMIN_SECRET")
     admin_group_id: str | int = Field("282311426", alias="ADMIN_GROUP_ID")
+    port: int = Field(8000, alias="PORT")
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

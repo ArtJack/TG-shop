@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTelegram } from '../hooks/useTelegram';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+import API_URL from '../utils/api.js';
 
 export default function Cart({ cart, setCart }) {
     const navigate = useNavigate();
@@ -23,43 +23,32 @@ export default function Cart({ cart, setCart }) {
         shipping_zip: ''
     });
 
-    // Auto-fill shipping data from user profile
-    useEffect(() => {
-        const fetchProfile = async () => {
-            const telegramId = user?.id || 123456789;
-            try {
-                const res = await fetch(`${API_URL}/api/users/${telegramId}/profile`);
-                if (res.ok) {
-                    const profile = await res.json();
-                    setForm({
-                        customer_name: profile.customer_name || user?.first_name || '',
-                        phone: profile.phone || '',
-                        shipping_address: profile.shipping_address || '',
-                        shipping_city: profile.shipping_city || '',
-                        shipping_state: profile.shipping_state || '',
-                        shipping_zip: profile.shipping_zip || ''
-                    });
-                }
-            } catch (err) {
-                console.error("Failed to fetch user profile for auto-fill", err);
-            }
-        };
-        fetchProfile();
-    }, [user?.id]);
+
+
+    const varId = (id) => id || null;
 
     const updateQuantity = (productId, variationId, delta) => {
         setCart((prev) =>
             prev
-                .map((item) =>
-                    item.product.id === productId && (item.variation?.id || null) === (varId(variationId))
-                        ? { ...item, quantity: Math.max(0, item.quantity + delta) }
-                        : item
-                )
+                .map((item) => {
+                    if (item.product.id === productId && (item.variation?.id || null) === varId(variationId)) {
+                        const newQty = item.quantity + delta;
+                        if (newQty <= 0) return { ...item, quantity: 0 };
+
+                        const maxQuantity = item.variation ? item.variation.quantity : item.product.quantity;
+                        if (delta > 0 && item.product.in_stock && newQty > maxQuantity) {
+                            alert(`Sorry, only ${maxQuantity} items available in stock.`);
+                            return item; // Do not increase
+                        }
+
+                        return { ...item, quantity: newQty };
+                    }
+                    return item;
+                })
                 .filter((item) => item.quantity > 0)
         );
     };
 
-    const varId = (id) => id || null;
 
     const removeItem = (productId, variationId) => {
         setCart((prev) => prev.filter((item) => !(item.product.id === productId && (item.variation?.id || null) === varId(variationId))));
@@ -70,9 +59,12 @@ export default function Cart({ cart, setCart }) {
         0
     );
 
+    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+
     const proceedToPayment = (e) => {
         e.preventDefault();
-        const code = 'ZELLE-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous I,O,0,1
+        const code = 'ZELLE-' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
         setConfirmationCode(code);
         setIsPayment(true);
     };
@@ -83,7 +75,7 @@ export default function Cart({ cart, setCart }) {
         setError('');
 
         const orderData = {
-            telegram_user_id: user?.id || 123456789, // fallback for testing outside TG
+            telegram_user_id: user?.id || 0, // Fallback to 0 if opened outside Telegram
             customer_name: form.customer_name || user?.first_name || 'Anonymous',
             customer_username: user?.username || '',
             phone: form.phone,
@@ -151,7 +143,7 @@ export default function Cart({ cart, setCart }) {
                             Please send exactly <strong style={{ color: 'var(--text-primary)' }}>${total.toFixed(2)}</strong> to the following Zelle number:
                         </p>
                         <div style={{ padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8, marginTop: 12, textAlign: 'center', fontWeight: 'bold', fontSize: 18 }}>
-                            +1 (555) 123-4567
+                            +1 (916) 500-3747
                         </div>
 
                         <p style={{ color: 'var(--text-secondary)', marginTop: 24, fontSize: 14 }}>
@@ -170,7 +162,7 @@ export default function Cart({ cart, setCart }) {
                         disabled={loading}
                         style={{ marginTop: 10, padding: 16, width: '100%', fontSize: 16, fontWeight: 'bold' }}
                     >
-                        {loading ? 'Processing...' : 'Оплатил (I Paid)'}
+                        {loading ? 'Processing...' : 'I Paid'}
                     </button>
                     <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12, marginTop: 16 }}>
                         By clicking "I Paid", you confirm that the transfer was sent. Your order will be shipped once the payment is verified.
@@ -191,8 +183,8 @@ export default function Cart({ cart, setCart }) {
                 <form className="checkout-form" onSubmit={proceedToPayment} style={{ padding: 16 }}>
                     <div className="checkout-summary" style={{ marginBottom: 20, padding: 16, background: 'var(--card-bg)', borderRadius: 12 }}>
                         <h3 style={{ margin: '0 0 10px 0' }}>Order Summary</h3>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
-                            <span>{cart.length} items</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: 'var(--text-secondary)' }}>
+                            <span>{totalItems} {totalItems === 1 ? 'item' : 'items'}</span>
                             <span>${total.toFixed(2)}</span>
                         </div>
                     </div>
@@ -202,15 +194,89 @@ export default function Cart({ cart, setCart }) {
                     {error && <div style={{ color: 'var(--danger)', marginBottom: 16, padding: 12, background: 'rgba(255, 60, 60, 0.1)', borderRadius: 8 }}>{error}</div>}
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <input className="checkout-input" required placeholder="Full Name *" value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })} />
-                        <input className="checkout-input" required type="tel" placeholder="Phone Number *" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-                        <input className="checkout-input" required placeholder="Street Address *" value={form.shipping_address} onChange={e => setForm({ ...form, shipping_address: e.target.value })} />
+                        <input
+                            className="checkout-input"
+                            required
+                            placeholder="Full Name *"
+                            autoComplete="name"
+                            autoCapitalize="words"
+                            value={form.customer_name}
+                            onChange={e => {
+                                // Basic auto-camelCase for typed input, though CSS/mobile keyboards handle the visual part better
+                                const val = e.target.value.replace(/\b\w/g, c => c.toUpperCase());
+                                setForm({ ...form, customer_name: val });
+                            }}
+                        />
+                        <input
+                            className="checkout-input"
+                            required
+                            type="tel"
+                            placeholder="Phone Number *"
+                            autoComplete="tel"
+                            maxLength={15}
+                            value={form.phone}
+                            onChange={e => {
+                                // Only allow numbers
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                setForm({ ...form, phone: val });
+                            }}
+                        />
+                        <input
+                            className="checkout-input"
+                            required
+                            placeholder="Street Address *"
+                            autoComplete="street-address"
+                            autoCapitalize="words"
+                            value={form.shipping_address}
+                            onChange={e => {
+                                const val = e.target.value.replace(/\b\w/g, c => c.toUpperCase());
+                                setForm({ ...form, shipping_address: val });
+                            }}
+                        />
 
                         <div style={{ display: 'flex', gap: 8 }}>
-                            <input className="checkout-input" required placeholder="City *" style={{ flex: 2 }} value={form.shipping_city} onChange={e => setForm({ ...form, shipping_city: e.target.value })} />
-                            <input className="checkout-input" required placeholder="State *" style={{ flex: 1 }} value={form.shipping_state} onChange={e => setForm({ ...form, shipping_state: e.target.value })} />
+                            <input
+                                className="checkout-input"
+                                required
+                                placeholder="City *"
+                                style={{ flex: 2 }}
+                                autoComplete="address-level2"
+                                autoCapitalize="words"
+                                value={form.shipping_city}
+                                onChange={e => {
+                                    const val = e.target.value.replace(/\b\w/g, c => c.toUpperCase());
+                                    setForm({ ...form, shipping_city: val });
+                                }}
+                            />
+                            <input
+                                className="checkout-input"
+                                required
+                                placeholder="State *"
+                                style={{ flex: 1 }}
+                                maxLength={2}
+                                autoComplete="address-level1"
+                                value={form.shipping_state}
+                                onChange={e => {
+                                    // Make uppercase, max 2 chars, letters only
+                                    const val = e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2);
+                                    setForm({ ...form, shipping_state: val });
+                                }}
+                            />
                         </div>
-                        <input className="checkout-input" required placeholder="ZIP Code *" type="text" value={form.shipping_zip} onChange={e => setForm({ ...form, shipping_zip: e.target.value })} />
+                        <input
+                            className="checkout-input"
+                            required
+                            placeholder="ZIP Code *"
+                            type="tel"
+                            maxLength={5}
+                            autoComplete="postal-code"
+                            value={form.shipping_zip}
+                            onChange={e => {
+                                // Only allow numbers
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                setForm({ ...form, shipping_zip: val });
+                            }}
+                        />
                     </div>
 
                     <button
@@ -229,8 +295,8 @@ export default function Cart({ cart, setCart }) {
     return (
         <div className="cart-page">
             <div className="cart-header">
-                <h1>🛒 Cart</h1>
-                <span className="cart-count">{cart.length} items</span>
+                <h1>Review Cart</h1>
+                <span className="cart-count">{totalItems} {totalItems === 1 ? 'item' : 'items'}</span>
             </div>
 
             <div className="cart-items">
@@ -240,7 +306,7 @@ export default function Cart({ cart, setCart }) {
                     return (
                         <div key={`${item.product.id}-${vId}-${idx}`} className="cart-item">
                             <img
-                                src={item.product.image_url}
+                                src={item.product.image_url || (item.product.image_urls && item.product.image_urls.length > 0 ? item.product.image_urls[0] : '')}
                                 alt={item.product.name}
                                 className="cart-item-image"
                             />

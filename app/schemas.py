@@ -22,7 +22,10 @@ class UserProfileOut(UserProfileBase):
 # ── Categories ──────────────────────────────────────────────
 class CategoryBase(BaseModel):
     name: str
+    slug: str = ""
     image_url: str = ""
+    emoji: str = ""
+    color: str = ""
     parent_id: Optional[int] = None
     order: int = 0
 
@@ -66,6 +69,7 @@ class ProductOut(BaseModel):
     price: float
     old_price: Optional[float] = None
     image_url: str
+    image_urls: list[str] = []
     category: str
     subcategory: str
     quantity: int = 0

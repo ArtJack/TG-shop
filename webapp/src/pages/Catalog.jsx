@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import ProductCard from '../components/ProductCard';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+import API_URL from '../utils/api.js';
 
 export default function Catalog({ cart, setCart }) {
     const [categories, setCategories] = useState([]);
@@ -57,9 +57,9 @@ export default function Catalog({ cart, setCart }) {
             <div className="catalog-header">
                 <h1 className="catalog-title">
                     <span className="title-icon">🛍</span>
-                    TG Shop
+                    Private Drop
                 </h1>
-                <p className="catalog-subtitle">Премиальные товары с доставкой</p>
+                <p className="catalog-subtitle">Premium goods with delivery</p>
             </div>
 
             <div className="category-tabs" style={{ display: 'flex', gap: 10, padding: '0 16px', overflowX: 'auto', msOverflowStyle: 'none', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
@@ -68,7 +68,7 @@ export default function Catalog({ cart, setCart }) {
                     onClick={() => setActiveCategory(null)}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 20, border: '1px solid var(--border)', background: activeCategory === null ? 'var(--button-bg)' : 'transparent', color: activeCategory === null ? '#fff' : 'var(--text-primary)', whiteSpace: 'nowrap', transition: 'all 0.2s', flexShrink: 0 }}
                 >
-                    Все
+                    All
                 </button>
                 {categories.map((cat) => (
                     <button
@@ -86,11 +86,11 @@ export default function Catalog({ cart, setCart }) {
             {loading ? (
                 <div className="loader">
                     <div className="spinner" />
-                    <p>Загрузка каталога…</p>
+                    <p>Loading catalog…</p>
                 </div>
             ) : products.length === 0 ? (
                 <div className="empty-state">
-                    <p>😔 Товары не найдены</p>
+                    <p>😔 No products found</p>
                 </div>
             ) : (
                 <div className="products-grid">

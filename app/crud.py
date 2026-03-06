@@ -1,9 +1,13 @@
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import Product, Order, OrderItem, UserProfile, Category
 from app.schemas import CartItem, UserProfileUpdate, CategoryCreate, CategoryUpdate
+
+logger = logging.getLogger(__name__)
 
 
 # ── Categories ──────────────────────────────────────────────
@@ -15,9 +19,12 @@ async def get_categories(session: AsyncSession) -> list[Category]:
 async def create_category(session: AsyncSession, data: CategoryCreate) -> Category:
     cat = Category(
         name=data.name,
+        slug=data.slug,
         image_url=data.image_url,
+        emoji=data.emoji,
+        color=data.color,
         parent_id=data.parent_id,
-        order=data.order
+        order=data.order,
     )
     session.add(cat)
     await session.commit()
@@ -30,7 +37,10 @@ async def update_category(session: AsyncSession, category_id: int, data: Categor
     cat = result.scalar_one_or_none()
     if cat:
         cat.name = data.name
+        cat.slug = data.slug
         cat.image_url = data.image_url
+        cat.emoji = data.emoji
+        cat.color = data.color
         cat.parent_id = data.parent_id
         cat.order = data.order
         await session.commit()
@@ -54,16 +64,20 @@ async def get_products(
     subcategory: str | None = None,
     is_new: bool | None = None,
     on_sale: bool | None = None,
+    in_stock: bool | None = None,
 ) -> list[Product]:
-    stmt = select(Product).options(selectinload(Product.variations)).where(Product.in_stock == True)
+    stmt = select(Product).options(selectinload(Product.variations))
+    if in_stock is not None:
+        stmt = stmt.where(Product.in_stock == in_stock)
     if category:
         stmt = stmt.where(Product.category == category)
     if subcategory:
         stmt = stmt.where(Product.subcategory == subcategory)
     if is_new:
-        stmt = stmt.where(Product.is_new == True)
+        stmt = stmt.where(Product.is_new.is_(True))
     if on_sale:
         stmt = stmt.where(Product.old_price.isnot(None))
+    stmt = stmt.order_by(Product.created_at.desc())
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
@@ -112,6 +126,7 @@ async def create_order(
         product = result.scalar_one_or_none()
         
         if not product:
+            logger.warning("Order creation: product_id=%s not found, skipping.", cart_item.product_id)
             continue
             
         unit_price = product.price
@@ -150,11 +165,10 @@ async def create_order(
             product.quantity -= cart_item.quantity
         else:
             product.quantity = 0
-            
-        if product.quantity == 0:
-            product.in_stock = False
 
-    order.total = total    # Save user profile from order data automatically
+    order.total = total
+
+    # Upsert user shipping profile from the order data
     profile = await get_user_profile(session, telegram_user_id)
     if not profile:
         profile = UserProfile(telegram_id=telegram_user_id)

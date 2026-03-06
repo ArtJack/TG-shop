@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, Float, Boolean
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, Float, Boolean, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -21,13 +21,25 @@ class Category(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), default="")
     image_url: Mapped[str] = mapped_column(String(500), default="")
+    emoji: Mapped[str] = mapped_column(String(10), default="")
+    color: Mapped[str] = mapped_column(String(100), default="")
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
     order: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Relationship for subcategories (optional, useful for eager loading)
+    # Relationship for subcategories (parent has many children)
     subcategories: Mapped[list["Category"]] = relationship(
-        "Category", backref="parent", remote_side=[id], cascade="all, delete-orphan"
+        "Category",
+        foreign_keys=[parent_id],
+        back_populates="parent_category",
+        cascade="all, delete-orphan",
+    )
+    parent_category: Mapped["Category | None"] = relationship(
+        "Category",
+        foreign_keys=[parent_id],
+        back_populates="subcategories",
+        remote_side=[id],
     )
 
 
@@ -54,6 +66,7 @@ class Product(Base):
     price: Mapped[float] = mapped_column(Float, nullable=False)
     old_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     image_url: Mapped[str] = mapped_column(String(500), default="")
+    image_urls: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     category: Mapped[str] = mapped_column(String(100), default="general")
     subcategory: Mapped[str] = mapped_column(String(100), default="")
     quantity: Mapped[int] = mapped_column(Integer, default=0)

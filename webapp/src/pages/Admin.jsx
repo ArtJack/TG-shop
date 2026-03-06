@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+import API_URL from '../utils/api.js';
 
 const CATEGORIES = [
     'jewelry', 'totes', 'clothes', 'shoes', 'perfume', 'home',
@@ -16,7 +16,7 @@ const ORDER_STATUSES = ['pending', 'confirmed', 'shipped', 'delivered', 'cancell
 
 const EMPTY_PRODUCT = {
     name: '', sku: '', description: '', price: '', old_price: '',
-    image_url: '', category: 'jewelry', subcategory: '',
+    image_url: '', image_urls: [], category: 'jewelry', subcategory: '',
     quantity: 0, in_stock: false, is_new: false,
 };
 
@@ -131,7 +131,10 @@ export default function Admin() {
             });
             if (res.ok) {
                 const data = await res.json();
-                setEditingProduct(prev => ({ ...prev, image_url: data.url }));
+                setEditingProduct(prev => {
+                    const newUrls = [...(prev.image_urls || []), data.url];
+                    return { ...prev, image_urls: newUrls, image_url: newUrls[0] || '' };
+                });
                 showMsg('🖼️ Image uploaded successfully');
             } else {
                 showMsg('❌ Image upload failed');
@@ -141,6 +144,30 @@ export default function Admin() {
         }
         setLoading(false);
     };
+
+    const removeImage = (index) => {
+        setEditingProduct(prev => {
+            const newUrls = [...(prev.image_urls || [])];
+            newUrls.splice(index, 1);
+            return { ...prev, image_urls: newUrls, image_url: newUrls[0] || '' };
+        });
+    };
+
+    const onDrop = useCallback((e) => {
+        e.preventDefault();
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+        files.forEach(f => uploadImage(f));
+    }, [secret]);
+
+    const onPaste = useCallback((e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith('image/')) {
+                uploadImage(items[i].getAsFile());
+            }
+        }
+    }, [secret]);
 
     // ── CRM Category Logic ─────────────────────────────
     const saveCategory = async (e) => {
@@ -304,20 +331,31 @@ export default function Admin() {
                                 onChange={(e) => setEditingProduct({ ...editingProduct, old_price: e.target.value })} />
                         </label>
                     </div>
-                    <label>Image URL or File Upload
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <input className="admin-input" value={editingProduct.image_url}
-                                onChange={(e) => setEditingProduct({ ...editingProduct, image_url: e.target.value })} />
-                            <input type="file" accept="image/*" id="image-upload" style={{ display: 'none' }}
-                                onChange={(e) => { if (e.target.files[0]) uploadImage(e.target.files[0]); }} />
-                            <button type="button" className="btn-secondary" style={{ padding: '0 16px', whiteSpace: 'nowrap' }}
-                                onClick={() => document.getElementById('image-upload').click()}>
-                                📎 Upload
-                            </button>
+                    <label>Product Images (Drag & Drop or Paste here)</label>
+                    <div
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={onDrop}
+                        onPaste={onPaste}
+                        style={{
+                            border: '2px dashed var(--border)', padding: 20, textAlign: 'center', borderRadius: 8,
+                            background: 'var(--bg-secondary)', cursor: 'pointer', marginBottom: 15
+                        }}
+                        onClick={() => document.getElementById('image-upload').click()}
+                    >
+                        Click, Paste, or Drop images here
+                        <input type="file" multiple accept="image/*" id="image-upload" style={{ display: 'none' }}
+                            onChange={(e) => { Array.from(e.target.files).forEach(f => uploadImage(f)); }} />
+                    </div>
+
+                    {(editingProduct.image_urls || []).length > 0 && (
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 15 }}>
+                            {editingProduct.image_urls.map((url, idx) => (
+                                <div key={idx} style={{ position: 'relative', width: 80, height: 80 }}>
+                                    <img src={url} alt={`preview-${idx}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }} />
+                                    <button type="button" onClick={() => removeImage(idx)} style={{ position: 'absolute', top: -5, right: -5, background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: 24, height: 24, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                                </div>
+                            ))}
                         </div>
-                    </label>
-                    {editingProduct.image_url && (
-                        <img src={editingProduct.image_url} alt="preview" className="admin-preview" />
                     )}
                     <div className="admin-row">
                         <label>Category
@@ -334,19 +372,24 @@ export default function Admin() {
                             </select>
                         </label>
                     </div>
-                    <div className="admin-row">
-                        <label>Quantity in Stock
+                    <div className="admin-row" style={{ alignItems: 'flex-start' }}>
+                        <label style={{ flex: 1 }}>Quantity in Stock
                             <input className="admin-input" type="number" required min="0"
                                 value={editingProduct.quantity}
                                 onChange={(e) => setEditingProduct({ ...editingProduct, quantity: e.target.value })} />
                         </label>
-                        <label style={{ justifyContent: 'center', paddingTop: 20 }}>
-                            <div className="admin-checkbox">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 28, flex: 1, paddingLeft: 10 }}>
+                            <label className="admin-checkbox" style={{ margin: 0 }}>
+                                <input type="checkbox" checked={editingProduct.in_stock}
+                                    onChange={(e) => setEditingProduct({ ...editingProduct, in_stock: e.target.checked })} />
+                                Available (In Stock)
+                            </label>
+                            <label className="admin-checkbox" style={{ margin: 0 }}>
                                 <input type="checkbox" checked={editingProduct.is_new}
                                     onChange={(e) => setEditingProduct({ ...editingProduct, is_new: e.target.checked })} />
                                 Mark as New Arrival
-                            </div>
-                        </label>
+                            </label>
+                        </div>
                     </div>
                     <button className="btn-primary" type="submit">
                         {editingProduct.id ? 'Save Changes' : 'Create Product'}
@@ -395,6 +438,23 @@ export default function Admin() {
                     <label>Name *
                         <input className="admin-input" required value={editingCategory.name}
                             onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })} />
+                    </label>
+                    <div className="admin-row">
+                        <label>Slug (URL key, e.g. "jewelry")
+                            <input className="admin-input" placeholder="jewelry" value={editingCategory.slug || ''}
+                                onChange={(e) => setEditingCategory({ ...editingCategory, slug: e.target.value })} />
+                        </label>
+                        <label>Emoji
+                            <input className="admin-input" placeholder="💎" value={editingCategory.emoji || ''}
+                                onChange={(e) => setEditingCategory({ ...editingCategory, emoji: e.target.value })} />
+                        </label>
+                    </div>
+                    <label>Color Gradient (CSS, e.g. "#a18cd1, #fbc2eb")
+                        <input className="admin-input" placeholder="#a18cd1, #fbc2eb" value={editingCategory.color || ''}
+                            onChange={(e) => setEditingCategory({ ...editingCategory, color: e.target.value })} />
+                        {editingCategory.color && (
+                            <div style={{ marginTop: 6, height: 24, borderRadius: 6, background: `linear-gradient(135deg, ${editingCategory.color})` }} />
+                        )}
                     </label>
                     <div className="admin-row">
                         <label>Order (Sorting)
@@ -625,7 +685,7 @@ export default function Admin() {
                 <div>
                     <div className="crm-toolbar">
                         <input className="admin-input" disabled value="" placeholder="Filter categories..." />
-                        <button className="btn-primary" onClick={() => setEditingCategory({ name: '', image_url: '', parent_id: null, order: 0 })}>+ Add Category</button>
+                        <button className="btn-primary" onClick={() => setEditingCategory({ name: '', slug: '', emoji: '', color: '', image_url: '', parent_id: null, order: 0 })}>+ Add Category</button>
                     </div>
 
                     <div className="admin-list">
